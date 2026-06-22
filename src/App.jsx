@@ -1,17 +1,20 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRotation } from './hooks/useRotation'
-import ParticlesBackground from './components/ParticlesBackground'
+import { useLang } from './i18n'
+import FloatingBg from './components/FloatingBg'
+import Confetti from './components/Confetti'
 import EqualBadge from './components/EqualBadge'
 import StatsModal from './components/StatsModal'
 import CourtCard from './components/CourtCard'
 import WaitingList from './components/WaitingList'
-import Settings from './components/Settings'
+import InlineConfig from './components/InlineConfig'
 
 export default function App() {
+  const { lang, t, toggleLang } = useLang()
   const { state, waitingPlayers, guaranteedNextIds, gameStats, actions } = useRotation()
   const [statsOpen, setStatsOpen] = useState(false)
-  const [settingsOpen, setSettingsOpen] = useState(false)
   const [newName, setNewName] = useState('')
+  const [confettiTick, setConfettiTick] = useState(0)
 
   const handleAdd = (e) => {
     e.preventDefault()
@@ -19,64 +22,68 @@ export default function App() {
     setNewName('')
   }
 
+  const handleEnd = (courtId) => {
+    actions.endMatch(courtId)
+    setConfettiTick((n) => n + 1)
+  }
+
+  const handleResetAll = () => actions.resetAll(() => window.confirm(t('confirmReset')))
+  const handleResetGames = () => actions.resetGameCounts(() => window.confirm(t('confirmResetGames')))
+
   const canStartAnotherCourt = waitingPlayers.length >= state.perCourt
 
   return (
-    <div className="min-h-full text-white">
-      {/* Backgrounds */}
-      <div
-        className="fixed inset-0 pointer-events-none"
-        style={{
-          zIndex: 0,
-          background:
-            'radial-gradient(circle at 50% 0%, rgba(44, 92, 136, 0.18), transparent 60%), #010101',
-        }}
-      />
-      <ParticlesBackground />
+    <div className="min-h-full text-gray-800 relative">
+      <FloatingBg />
 
-      {/* Nav */}
-      <nav className="fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-5 sm:px-10 py-4">
-        <div className="flex items-center gap-2">
-          <span className="text-xl">🎾</span>
-          <span className="font-bold text-white tracking-tight">tennis rotation</span>
+      {/* Header */}
+      <header className="sticky top-0 z-30 backdrop-blur-md bg-white/60 border-b border-pink-100">
+        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl animate-wiggle">🎾</span>
+            <div>
+              <h1 className="font-display font-extrabold text-gray-900 text-base leading-none">
+                {t('appTitle')}
+              </h1>
+              <p className="text-[10px] text-gray-500 mt-0.5">{t('tagline')}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <EqualBadge
+              stats={gameStats}
+              hasPlayers={state.players.length > 0}
+              onClick={() => setStatsOpen(true)}
+              t={t}
+            />
+            <button
+              onClick={toggleLang}
+              className="rounded-full h-8 px-3 bg-white border border-pink-100 text-gray-700 text-[11px] font-bold active:scale-95 transition shadow-sm"
+              aria-label="toggle language"
+            >
+              {lang === 'ja' ? 'EN' : 'JA'}
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <EqualBadge
-            stats={gameStats}
-            hasPlayers={state.players.length > 0}
-            onClick={() => setStatsOpen(true)}
-          />
-          <button
-            onClick={() => setSettingsOpen(true)}
-            className="rounded-full h-9 w-9 bg-white/5 border border-subtle text-slate-300 hover:text-white active:scale-95 transition"
-            aria-label="設定"
-          >
-            ⚙
-          </button>
-        </div>
-      </nav>
+      </header>
 
       {/* Content */}
-      <div className="relative z-10 max-w-2xl mx-auto px-4 sm:px-6 pt-24 sm:pt-28 pb-32">
-        {/* Hero */}
-        <section className="text-center mb-10 sm:mb-12">
-          <p className="text-xs text-slate-500 uppercase tracking-widest mb-3">Fair court rotation</p>
-          <h1 className="text-3xl sm:text-5xl font-semibold leading-tight">
-            試合数が少ない人を
-            <br />
-            <span className="relative inline-block">
-              <span className="absolute bottom-1 left-0 right-0 h-2.5 rounded-sm bg-accent/80" />
-              <span className="relative">優先的に</span>
-            </span>
-            <span> コートへ</span>
-          </h1>
-          <p className="text-sm text-slate-400 mt-5 max-w-md mx-auto leading-relaxed">
-            プレイヤーを追加して「試合終了」をタップするだけ。次に入る4人は自動で公平に選ばれます。
-          </p>
+      <main className="relative z-10 max-w-2xl mx-auto px-4 pt-4 pb-28">
+        {/* Inline config */}
+        <section className="mb-3">
+          <InlineConfig
+            courtCount={state.courts.length}
+            perCourt={state.perCourt}
+            onAddCourt={actions.addCourt}
+            onRemoveCourt={actions.removeCourt}
+            onSetPerCourt={actions.setPerCourt}
+            onResetGames={handleResetGames}
+            onResetAll={handleResetAll}
+            t={t}
+          />
         </section>
 
         {/* Courts */}
-        <section className="space-y-3 mb-4">
+        <section className="space-y-3 mb-3">
           {state.courts.map((court, idx) => (
             <CourtCard
               key={court.id}
@@ -85,64 +92,65 @@ export default function App() {
               players={state.players}
               perCourt={state.perCourt}
               onStart={actions.startCourt}
-              onEnd={actions.endMatch}
+              onEnd={handleEnd}
+              onRemoveFromCourt={actions.removeFromCourt}
               canStart={canStartAnotherCourt}
+              t={t}
             />
           ))}
         </section>
 
         {/* Waiting */}
-        <section className="mb-6">
+        <section className="mb-3">
           <WaitingList
             waiting={waitingPlayers}
             guaranteedIds={guaranteedNextIds}
             onRemove={actions.removePlayer}
             onAdjust={actions.adjustGames}
+            t={t}
           />
         </section>
-      </div>
+
+        {state.players.length === 0 && (
+          <div className="text-center py-6 text-sm text-gray-400">
+            <p className="mb-2">👇</p>
+            <p>{t('noPlayers')}</p>
+          </div>
+        )}
+      </main>
 
       {/* Add player form */}
       <form
         onSubmit={handleAdd}
-        className="fixed bottom-3 left-3 right-3 z-40 sm:bottom-6 sm:left-1/2 sm:-translate-x-1/2 sm:right-auto sm:w-full sm:max-w-xl sm:px-0 flex gap-2"
+        className="fixed bottom-3 left-3 right-3 z-40 sm:bottom-6 sm:left-1/2 sm:-translate-x-1/2 sm:right-auto sm:w-full sm:max-w-xl flex gap-2"
       >
         <input
           type="text"
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
-          placeholder="プレイヤー名を追加"
-          className="flex-1 rounded-full bg-ink-800/90 backdrop-blur border border-subtle text-white px-4 py-3 text-sm placeholder:text-slate-500 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
+          placeholder={t('addPlaceholder')}
+          className="flex-1 rounded-full bg-white/90 backdrop-blur border border-pink-100 text-gray-800 px-5 py-3 text-sm placeholder:text-gray-400 focus:outline-none focus:border-pink-300 focus:ring-2 focus:ring-pink-200 shadow-soft"
           enterKeyHint="done"
         />
         <button
           type="submit"
-          className="rounded-full bg-accent hover:bg-accent-hover text-white px-5 py-3 text-sm font-semibold active:scale-95 disabled:opacity-40 transition"
+          className="rounded-full bg-pink-500 hover:bg-pink-600 text-white px-5 py-3 text-sm font-bold active:scale-95 disabled:opacity-40 shadow-pop transition"
           disabled={!newName.trim()}
         >
-          追加
+          ✨ {t('add')}
         </button>
       </form>
 
-      {/* Modals */}
       <StatsModal
         open={statsOpen}
         onClose={() => setStatsOpen(false)}
         players={state.players}
         stats={gameStats}
         onAdjust={actions.adjustGames}
+        t={t}
       />
-      <Settings
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        courtCount={state.courts.length}
-        perCourt={state.perCourt}
-        onAddCourt={actions.addCourt}
-        onRemoveCourt={actions.removeCourt}
-        onSetPerCourt={actions.setPerCourt}
-        onResetGames={actions.resetGameCounts}
-        onResetAll={actions.resetAll}
-      />
+
+      <Confetti trigger={confettiTick} />
     </div>
   )
 }

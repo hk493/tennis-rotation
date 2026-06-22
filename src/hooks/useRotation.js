@@ -26,25 +26,19 @@ function loadState() {
 function saveState(state) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-  } catch {
-    /* ignore */
-  }
+  } catch {}
 }
 
-/**
- * Pick next players for a court.
- * Priority: fewer games first, then longer wait time first.
- */
-function pickPlayersForCourt(players, exclude, perCourt) {
-  const available = players
+/** Pick fewer-games-first, longer-wait-first. */
+function pickPlayersForCourt(players, exclude, count) {
+  return players
     .filter((p) => !exclude.has(p.id))
     .sort((a, b) => {
       if (a.games !== b.games) return a.games - b.games
-      const ax = a.queuedAt ?? a.addedAt
-      const bx = b.queuedAt ?? b.addedAt
-      return ax - bx
+      return (a.queuedAt ?? a.addedAt) - (b.queuedAt ?? b.addedAt)
     })
-  return available.slice(0, perCourt).map((p) => p.id)
+    .slice(0, count)
+    .map((p) => p.id)
 }
 
 export function useRotation() {
@@ -73,14 +67,26 @@ export function useRotation() {
   }, [])
 
   const removePlayer = useCallback((id) => {
-    setState((s) => ({
-      ...s,
-      players: s.players.filter((p) => p.id !== id),
-      courts: s.courts.map((c) => ({
+    setState((s) => {
+      const isOnCourt = s.courts.some((c) => c.playerIds.includes(id))
+      const players = s.players.filter((p) => p.id !== id)
+      let courts = s.courts.map((c) => ({
         ...c,
         playerIds: c.playerIds.filter((pid) => pid !== id),
-      })),
-    }))
+      }))
+      // Auto-fill the freed spot from waiting list
+      if (isOnCourt) {
+        const onCourtIds = new Set(courts.flatMap((c) => c.playerIds))
+        courts = courts.map((c) => {
+          if (c.playerIds.length === 0 || c.playerIds.length >= s.perCourt) return c
+          const needed = s.perCourt - c.playerIds.length
+          const picks = pickPlayersForCourt(players, onCourtIds, needed)
+          picks.forEach((pid) => onCourtIds.add(pid))
+          return { ...c, playerIds: [...c.playerIds, ...picks] }
+        })
+      }
+      return { ...s, players, courts }
+    })
   }, [])
 
   const adjustGames = useCallback((id, delta) => {
@@ -88,15 +94,6 @@ export function useRotation() {
       ...s,
       players: s.players.map((p) =>
         p.id === id ? { ...p, games: Math.max(0, p.games + delta) } : p,
-      ),
-    }))
-  }, [])
-
-  const setGames = useCallback((id, value) => {
-    setState((s) => ({
-      ...s,
-      players: s.players.map((p) =>
-        p.id === id ? { ...p, games: Math.max(0, Number(value) || 0) } : p,
       ),
     }))
   }, [])
@@ -117,13 +114,13 @@ export function useRotation() {
     setState((s) => {
       if (s.courts.length <= 1) return s
       const last = s.courts[s.courts.length - 1]
-      const releasedIds = last.playerIds
+      const released = last.playerIds
       const now = Date.now()
       return {
         ...s,
         courts: s.courts.slice(0, -1),
         players: s.players.map((p) =>
-          releasedIds.includes(p.id) ? { ...p, queuedAt: now } : p,
+          released.includes(p.id) ? { ...p, queuedAt: now } : p,
         ),
       }
     })
@@ -148,18 +145,16 @@ export function useRotation() {
       const court = s.courts.find((c) => c.id === courtId)
       if (!court || court.playerIds.length === 0) return s
       const now = Date.now()
-      const finishedIds = court.playerIds
+      const finished = court.playerIds
       const playersAfter = s.players.map((p) =>
-        finishedIds.includes(p.id)
+        finished.includes(p.id)
           ? { ...p, games: p.games + 1, queuedAt: now }
           : p,
       )
-
-      const stillOnOtherCourts = new Set(
+      const others = new Set(
         s.courts.filter((c) => c.id !== courtId).flatMap((c) => c.playerIds),
       )
-      const picks = pickPlayersForCourt(playersAfter, stillOnOtherCourts, s.perCourt)
-
+      const picks = pickPlayersForCourt(playersAfter, others, s.perCourt)
       const courts = s.courts.map((c) =>
         c.id === courtId
           ? {
@@ -169,17 +164,10 @@ export function useRotation() {
             }
           : c,
       )
-
       const history = [
-        {
-          id: `h${s.nextHistoryId}`,
-          courtId,
-          playerIds: finishedIds,
-          endedAt: now,
-        },
+        { id: `h${s.nextHistoryId}`, courtId, playerIds: finished, endedAt: now },
         ...s.history,
       ].slice(0, 50)
-
       return {
         ...s,
         players: playersAfter,
@@ -190,13 +178,38 @@ export function useRotation() {
     })
   }, [])
 
-  const resetAll = useCallback(() => {
-    if (typeof window !== 'undefined' && !window.confirm('全データをリセットしますか？')) return
+  /** Remove one player from a court (e.g. drops out mid-match). Auto-replace from waiting. */
+  const removeFromCourt = useCallback((courtId, playerId) => {
+    setState((s) => {
+      const court = s.courts.find((c) => c.id === courtId)
+      if (!court || !court.playerIds.includes(playerId)) return s
+      const remaining = court.playerIds.filter((id) => id !== playerId)
+      const onOthers = new Set(
+        s.courts.filter((c) => c.id !== courtId).flatMap((c) => c.playerIds),
+      )
+      remaining.forEach((id) => onOthers.add(id))
+      const replacement = pickPlayersForCourt(s.players, onOthers, 1)
+      const newIds = [...remaining, ...replacement]
+      const now = Date.now()
+      return {
+        ...s,
+        courts: s.courts.map((c) =>
+          c.id === courtId ? { ...c, playerIds: newIds } : c,
+        ),
+        players: s.players.map((p) =>
+          p.id === playerId ? { ...p, queuedAt: now } : p,
+        ),
+      }
+    })
+  }, [])
+
+  const resetAll = useCallback((confirmFn) => {
+    if (!confirmFn()) return
     setState(DEFAULT_STATE)
   }, [])
 
-  const resetGameCounts = useCallback(() => {
-    if (typeof window !== 'undefined' && !window.confirm('試合数を0にリセットしますか？')) return
+  const resetGameCounts = useCallback((confirmFn) => {
+    if (!confirmFn()) return
     setState((s) => ({
       ...s,
       players: s.players.map((p) => ({ ...p, games: 0, queuedAt: Date.now() })),
@@ -221,8 +234,7 @@ export function useRotation() {
   )
 
   const guaranteedNextIds = useMemo(() => {
-    const slotsPerRound = state.perCourt
-    return new Set(waitingPlayers.slice(0, slotsPerRound).map((p) => p.id))
+    return new Set(waitingPlayers.slice(0, state.perCourt).map((p) => p.id))
   }, [waitingPlayers, state.perCourt])
 
   const gameStats = useMemo(() => {
@@ -241,8 +253,8 @@ export function useRotation() {
     actions: {
       addPlayer,
       removePlayer,
+      removeFromCourt,
       adjustGames,
-      setGames,
       setPerCourt,
       addCourt,
       removeCourt,
