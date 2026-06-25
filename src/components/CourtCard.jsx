@@ -31,7 +31,7 @@ export default function CourtCard({
             onClick={() => onEnd(court.id)}
             className="rounded-full bg-pink-500 hover:bg-pink-600 text-white text-xs font-bold px-4 py-1.5 active:scale-95 shadow-pop transition"
           >
-            🎾 {t('end')}
+            疾 {t('end')}
           </button>
         ) : (
           <button
@@ -39,7 +39,7 @@ export default function CourtCard({
             disabled={!canStart}
             className="rounded-full bg-pink-500 hover:bg-pink-600 text-white text-xs font-bold px-4 py-1.5 active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed shadow-pop transition"
           >
-            ✨ {t('start')}
+            笨ｨ {t('start')}
           </button>
         )}
       </div>
@@ -50,7 +50,7 @@ export default function CourtCard({
               <li
                 key={p.id}
                 style={{ animationDelay: `${i * 60}ms` }}
-                className="animate-pop-in relative rounded-2xl bg-gradient-to-br from-pink-50 to-mint-50 border border-pink-100 text-gray-800 px-3 py-2 text-sm font-medium flex items-center justify-between group"
+                className="animate-pop-in relative rounded-2xl bg-gradient-to-br from-pink-50 to-mint-50 border border-pink-100 text-gray-800 pl-3 pr-9 py-2 text-sm font-medium flex items-center justify-between"
               >
                 <span className="truncate pr-2">{p.name}</span>
                 <span className="text-[10px] text-gray-500 tabular-nums flex-shrink-0">
@@ -58,17 +58,16 @@ export default function CourtCard({
                 </span>
                 <button
                   onClick={() => onRemoveFromCourt(court.id, p.id)}
-                  className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-white border border-pink-200 text-pink-500 text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 active:opacity-100 active:scale-90 transition shadow-sm"
+                  className="absolute top-1/2 -translate-y-1/2 right-1.5 h-6 w-6 rounded-full bg-white border border-pink-200 hover:bg-pink-50 active:bg-pink-100 text-pink-500 text-[11px] font-bold flex items-center justify-center active:scale-90 transition shadow-sm"
                   aria-label="remove from court"
                 >
-                  ✕
-                </button>
+                  笨・                </button>
               </li>
             ))}
           </ul>
         ) : (
           <div className="rounded-2xl border-2 border-dashed border-pink-100 py-6 text-center text-sm text-gray-400">
-            {canStart ? `✨ ${t('start')}` : t('needMore', perCourt - onCourt.length)}
+            {canStart ? `笨ｨ ${t('start')}` : t('needMore', perCourt - onCourt.length)}
           </div>
         )}
       </div>
